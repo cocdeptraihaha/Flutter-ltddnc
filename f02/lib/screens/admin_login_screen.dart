@@ -82,7 +82,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           labelText: 'Email',
                           hintText: 'admin@kebook.local',
                           prefixIcon: Icon(Icons.email_outlined),
-                          border: OutlineInputBorder(),
                         ),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) {
@@ -102,7 +101,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         decoration: InputDecoration(
                           labelText: 'Mật khẩu',
                           prefixIcon: const Icon(Icons.lock_outline),
-                          border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
                             tooltip: _obscurePassword ? 'Hiện' : 'Ẩn',
                             onPressed: () {

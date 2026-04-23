@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_theme.dart';
 import 'screens/intro_screen.dart';
 
 void main() {
@@ -14,16 +15,7 @@ class KeBookF02App extends StatelessWidget {
     return MaterialApp(
       title: 'KeBook F02',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1565C0),
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-        inputDecorationTheme: const InputDecorationTheme(
-          filled: true,
-        ),
-      ),
+      theme: buildKeBookAdminTheme(),
       home: const IntroScreen(),
     );
   }
