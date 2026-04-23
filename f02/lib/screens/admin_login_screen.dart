@@ -1,18 +1,55 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Đăng nhập Admin KeBook (superuser) — giao diện form; gọi API backend khi tích hợp.
-class AdminLoginScreen extends StatefulWidget {
+import '../providers/auth_providers.dart';
+import 'admin_home_screen.dart';
+import 'forgot_password_screen.dart';
+import 'not_authorized_screen.dart';
+import 'register_screen.dart';
+
+/// Đăng nhập Admin KeBook — JWT + chặn user không phải superuser.
+class AdminLoginScreen extends ConsumerStatefulWidget {
   const AdminLoginScreen({super.key});
 
   @override
-  State<AdminLoginScreen> createState() => _AdminLoginScreenState();
+  ConsumerState<AdminLoginScreen> createState() => _AdminLoginScreenState();
 }
 
-class _AdminLoginScreenState extends State<AdminLoginScreen> {
+class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _loading = false;
+  bool _sessionChecked = false;
+
+  static final _emailRe = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreSession());
+  }
+
+  Future<void> _restoreSession() async {
+    if (_sessionChecked || !mounted) return;
+    _sessionChecked = true;
+    final next = await ref.read(authNotifierProvider.notifier).bootstrap();
+    if (!mounted) return;
+    switch (next) {
+      case AuthAdmin():
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const AdminHomeScreen()),
+        );
+      case AuthBlocked():
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const NotAuthorizedScreen()),
+        );
+      case AuthInitial():
+      case AuthUnauthenticated():
+        break;
+    }
+  }
 
   @override
   void dispose() {
@@ -21,9 +58,33 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_formKey.currentState?.validate() != true) return;
     FocusScope.of(context).unfocus();
+    setState(() => _loading = true);
+    try {
+      final id = _emailController.text.trim();
+      final pass = _passwordController.text;
+      final result =
+          await ref.read(authNotifierProvider.notifier).login(id, pass);
+      if (!mounted) return;
+      switch (result) {
+        case AuthActionAdminOk():
+          await Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(builder: (_) => const AdminHomeScreen()),
+          );
+        case AuthActionBlockedUser():
+          await Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(builder: (_) => const NotAuthorizedScreen()),
+          );
+        case AuthActionFailed(:final message):
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -79,15 +140,16 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         keyboardType: TextInputType.emailAddress,
                         autofillHints: const [AutofillHints.username],
                         decoration: const InputDecoration(
-                          labelText: 'Email',
+                          labelText: 'Email hoặc tên đăng nhập',
                           hintText: 'admin@kebook.local',
-                          prefixIcon: Icon(Icons.email_outlined),
+                          prefixIcon: Icon(Icons.person_outline),
                         ),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) {
-                            return 'Nhập email';
+                            return 'Nhập email hoặc tên đăng nhập';
                           }
-                          if (!v.contains('@')) {
+                          final t = v.trim();
+                          if (t.contains('@') && !_emailRe.hasMatch(t)) {
                             return 'Email không hợp lệ';
                           }
                           return null;
@@ -122,13 +184,47 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           return null;
                         },
                       ),
-                      const SizedBox(height: 28),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _loading
+                              ? null
+                              : () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => const ForgotPasswordScreen(),
+                                    ),
+                                  );
+                                },
+                          child: const Text('Quên mật khẩu?'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       FilledButton(
-                        onPressed: _submit,
+                        onPressed: _loading ? null : _submit,
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
-                        child: const Text('Đăng nhập Admin'),
+                        child: _loading
+                            ? const SizedBox(
+                                height: 22,
+                                width: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Đăng nhập Admin'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: _loading
+                            ? null
+                            : () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => const RegisterScreen(),
+                                  ),
+                                );
+                              },
+                        child: const Text('Chưa có tài khoản? Đăng ký'),
                       ),
                     ],
                   ),
