@@ -1,5 +1,5 @@
 name: f02
-description: KeBook F02 — intro splash và màn đăng nhập Admin.
+description: KeBook F02 — đăng nhập Admin KeBook (JWT, OTP).
 publish_to: "none"
 
 version: 1.0.0+1
@@ -10,6 +10,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_riverpod: ^2.5.1
+  dio: ^5.7.0
+  flutter_secure_storage: ^9.2.2
+  flutter_dotenv: ^5.2.1
 
 dev_dependencies:
   flutter_test:
@@ -18,3 +22,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env
