@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app_theme.dart';
-import 'screens/intro_screen.dart';
+import 'screens/admin_login_screen.dart';
 
-void main() {
-  runApp(const KeBookF02App());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: '.env');
+  runApp(
+    const ProviderScope(
+      child: KeBookF02App(),
+    ),
+  );
 }
 
 class KeBookF02App extends StatelessWidget {
@@ -16,7 +24,7 @@ class KeBookF02App extends StatelessWidget {
       title: 'KeBook F02',
       debugShowCheckedModeBanner: false,
       theme: buildKeBookAdminTheme(),
-      home: const IntroScreen(),
+      home: const AdminLoginScreen(),
     );
   }
 }
