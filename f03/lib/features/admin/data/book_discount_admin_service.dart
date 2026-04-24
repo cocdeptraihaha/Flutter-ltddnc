@@ -22,8 +22,10 @@ class BookDiscountAdminService {
   }
 
   Future<Map<String, dynamic>> create(Map<String, dynamic> body) async {
-    final res =
-        await _dio.post<Map<String, dynamic>>('/book-discounts/', data: body);
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/book-discounts/',
+      data: body,
+    );
     return res.data!;
   }
 
@@ -33,5 +35,9 @@ class BookDiscountAdminService {
       data: body,
     );
     return res.data!;
+  }
+
+  Future<void> delete(int id) async {
+    await _dio.delete<void>('/book-discounts/$id');
   }
 }
