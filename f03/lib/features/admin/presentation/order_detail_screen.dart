@@ -16,6 +16,7 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   Map<String, dynamic>? _order;
   bool _loading = true;
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -26,13 +27,15 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final o = await ref.read(orderAdminServiceProvider).getOrder(widget.orderId);
+      final o = await ref
+          .read(orderAdminServiceProvider)
+          .getOrder(widget.orderId);
       setState(() => _order = o);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(dioErrorMessage(e))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -40,21 +43,29 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   }
 
   Future<void> _setStatus(String s) async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
     try {
       await ref.read(orderAdminServiceProvider).updateStatus(widget.orderId, s);
       await _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(dioErrorMessage(e))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
       }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
   Future<void> _shipment() async {
-    final track = TextEditingController(text: _order?['tracking_number']?.toString());
-    final prov = TextEditingController(text: _order?['shipping_provider']?.toString());
+    final track = TextEditingController(
+      text: _order?['tracking_number']?.toString(),
+    );
+    final prov = TextEditingController(
+      text: _order?['shipping_provider']?.toString(),
+    );
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -62,29 +73,47 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: track, decoration: const InputDecoration(labelText: 'Tracking')),
-            TextField(controller: prov, decoration: const InputDecoration(labelText: 'Đơn vị')),
+            TextField(
+              controller: track,
+              decoration: const InputDecoration(labelText: 'Tracking'),
+            ),
+            TextField(
+              controller: prov,
+              decoration: const InputDecoration(labelText: 'Đơn vị'),
+            ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Lưu')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Huỷ'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Lưu'),
+          ),
         ],
       ),
     );
     if (ok == true) {
       try {
-        await ref.read(orderAdminServiceProvider).updateShipment(
+        await ref
+            .read(orderAdminServiceProvider)
+            .updateShipment(
               widget.orderId,
-              trackingNumber: track.text.trim().isEmpty ? null : track.text.trim(),
-              shippingProvider: prov.text.trim().isEmpty ? null : prov.text.trim(),
+              trackingNumber: track.text.trim().isEmpty
+                  ? null
+                  : track.text.trim(),
+              shippingProvider: prov.text.trim().isEmpty
+                  ? null
+                  : prov.text.trim(),
             );
         await _load();
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(dioErrorMessage(e))),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
         }
       }
     }
@@ -97,7 +126,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         title: const Text('Quyết định huỷ đơn'),
         content: const Text('Duyệt hay từ chối yêu cầu huỷ?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đóng'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'deny'),
             child: const Text('Từ chối'),
@@ -111,23 +143,74 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     );
     if (ok != null && ok.isNotEmpty) {
       try {
-        await ref.read(orderAdminServiceProvider).cancelDecision(
-              widget.orderId,
-              ok == 'approve',
-            );
+        await ref
+            .read(orderAdminServiceProvider)
+            .cancelDecision(widget.orderId, ok == 'approve');
         await _load();
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(dioErrorMessage(e))),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
         }
       }
     }
   }
 
+  String? _nextStatusFor(String current) {
+    switch (current) {
+      case 'PENDING':
+        return 'CONFIRMED';
+      case 'CONFIRMED':
+        return 'INPROGRESS';
+      case 'INPROGRESS':
+        return 'SHIPPED';
+      case 'SHIPPED':
+        return 'DELIVERED';
+      case 'DELIVERED':
+        return 'COMPLETED';
+      default:
+        return null;
+    }
+  }
+
+  bool _canCancelOrder(String current) {
+    const cancellable = {'PENDING', 'CONFIRMED', 'INPROGRESS', 'SHIPPED'};
+    return cancellable.contains(current);
+  }
+
+  Future<void> _cancelOrder() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hủy đơn hàng'),
+        content: const Text(
+          'Bạn có chắc muốn hủy đơn này? Hành động này sẽ cập nhật trạng thái sang CANCELLED.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Đóng'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Hủy đơn'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await _setStatus('CANCELLED');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final status = _order?['status']?.toString() ?? '';
+    final nextStatus = _nextStatusFor(status);
+    final canCancel = _canCancelOrder(status);
+    final hasCancelRequest = status.contains('CANCEL_REQUESTED');
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Đơn #${widget.orderId}'),
@@ -140,12 +223,28 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text('Trạng thái: ${_order!['status']}'),
-                Text('Khách: ${_order!['full_name']} · ${_order!['phone_number']}'),
-                Text('Địa chỉ: ${_order!['shipping_address']}'),
-                Text('Tổng: ${_order!['total_price']} ₫'),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.receipt_long_outlined),
+                    title: Text('Trạng thái: $status'),
+                    subtitle: Text('Tổng: ${_order!['total_price']} ₫'),
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.person_outline_rounded),
+                    title: Text('${_order!['full_name']}'),
+                    subtitle: Text(
+                      '${_order!['phone_number']} \n${_order!['shipping_address']}',
+                    ),
+                    isThreeLine: true,
+                  ),
+                ),
                 const Divider(),
-                const Text('Items', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Items',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 ...((_order!['order_items'] as List?) ?? []).map<Widget>((it) {
                   final m = it as Map<String, dynamic>;
                   return ListTile(
@@ -155,23 +254,39 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                   );
                 }),
                 const Divider(),
+                const Text(
+                  'Thao tác đơn hàng',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    OutlinedButton(
-                      onPressed: () => _setStatus('CONFIRMED'),
-                      child: const Text('CONFIRMED'),
+                    FilledButton.icon(
+                      onPressed: nextStatus == null || _submitting
+                          ? null
+                          : () => _setStatus(nextStatus),
+                      icon: const Icon(Icons.trending_up_rounded),
+                      label: Text(
+                        nextStatus == null
+                            ? 'Đơn đã ở trạng thái cuối'
+                            : 'Xúc tiến: $nextStatus',
+                      ),
                     ),
-                    OutlinedButton(
-                      onPressed: () => _setStatus('SHIPPED'),
-                      child: const Text('SHIPPED'),
+                    OutlinedButton.icon(
+                      onPressed: canCancel && !_submitting
+                          ? _cancelOrder
+                          : null,
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('Hủy đơn'),
                     ),
-                    OutlinedButton(
-                      onPressed: () => _setStatus('DELIVERED'),
-                      child: const Text('DELIVERED'),
+                    OutlinedButton.icon(
+                      onPressed: _submitting ? null : _shipment,
+                      icon: const Icon(Icons.local_shipping_outlined),
+                      label: const Text('Cập nhật vận chuyển'),
                     ),
-                    OutlinedButton(onPressed: _shipment, child: const Text('Shipment')),
-                    if ((_order!['status']?.toString().contains('CANCEL_REQUESTED') ?? false))
+                    if (hasCancelRequest)
                       OutlinedButton(
                         onPressed: _cancelDecision,
                         child: const Text('Huỷ đơn — quyết định'),
