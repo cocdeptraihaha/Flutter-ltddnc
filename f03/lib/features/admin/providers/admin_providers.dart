@@ -7,6 +7,7 @@ import '../data/book_discount_admin_service.dart';
 import '../data/category_admin_service.dart';
 import '../data/dashboard_service.dart';
 import '../data/date_range_util.dart';
+import '../data/notification_admin_service.dart';
 import '../data/order_admin_service.dart';
 import '../data/point_reward_service.dart';
 import '../data/promotion_admin_service.dart';
@@ -46,6 +47,10 @@ final categoryAdminServiceProvider =
 final pointRewardAdminServiceProvider =
     Provider<PointRewardAdminService>(
         (ref) => PointRewardAdminService(ref.watch(dioProvider)));
+
+final notificationAdminServiceProvider =
+    Provider<NotificationAdminService>(
+        (ref) => NotificationAdminService(ref.watch(dioProvider)));
 
 // --- Dashboard async ---
 

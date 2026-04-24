@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/api_client.dart';
 import '../../../providers/auth_providers.dart';
@@ -36,6 +37,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   String? _imageUrl;
   int? _bookDetailId;
   bool _loading = false;
+  final _displayDate = DateFormat('dd-MM-yyyy');
+  final _backendDate = DateFormat('yyyy-MM-dd');
 
   void _showError(String message) {
     ScaffoldMessenger.of(
@@ -43,10 +46,39 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  bool _isValidDate(String value) {
-    final re = RegExp(r'^\d{4}-\d{2}-\d{2}$');
-    if (!re.hasMatch(value)) return false;
-    return DateTime.tryParse(value) != null;
+  DateTime? _parseFlexibleDate(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return null;
+    try {
+      return _displayDate.parseStrict(text);
+    } catch (_) {}
+    try {
+      return _backendDate.parseStrict(text);
+    } catch (_) {}
+    return DateTime.tryParse(text);
+  }
+
+  String? _normalizePublicationDate(String value) {
+    final parsed = _parseFlexibleDate(value);
+    if (parsed == null) return null;
+    return _backendDate.format(parsed);
+  }
+
+  Future<void> _pickPublicationDate() async {
+    final now = DateTime.now();
+    final initial = _parseFlexibleDate(_pubDate.text) ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2100),
+      helpText: 'Chọn ngày xuất bản',
+      cancelText: 'Hủy',
+      confirmText: 'Chọn',
+    );
+    if (picked != null) {
+      _pubDate.text = _displayDate.format(picked);
+    }
   }
 
   bool _validateInputs() {
@@ -66,8 +98,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       return false;
     }
     if (_pubDate.text.trim().isNotEmpty &&
-        !_isValidDate(_pubDate.text.trim())) {
-      _showError('Ngày xuất bản phải theo định dạng YYYY-MM-DD');
+        _parseFlexibleDate(_pubDate.text.trim()) == null) {
+      _showError('Ngày xuất bản không hợp lệ (dd-MM-yyyy)');
       return false;
     }
     final pagesText = _pages.text.trim();
@@ -117,7 +149,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       _author.text = j['author']?.toString() ?? '';
       _code.text = j['code']?.toString() ?? '';
       _edition.text = '${j['edition'] ?? ''}';
-      _pubDate.text = j['publication_date']?.toString() ?? '';
+      final rawPub = j['publication_date']?.toString() ?? '';
+      final parsedPub = _parseFlexibleDate(rawPub.split('T').first);
+      _pubDate.text = parsedPub == null ? '' : _displayDate.format(parsedPub);
       _price.text = '${j['selling_price'] ?? ''}';
       _stock.text = '${j['stock_quantity'] ?? ''}';
       final d = j['book_detail'] as Map<String, dynamic>?;
@@ -146,65 +180,92 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     if (!_validateInputs()) return;
     setState(() => _loading = true);
     try {
-      final books = ref.read(bookAdminServiceProvider);
-      final detailBody = <String, dynamic>{
-        'description': _description.text.trim().isEmpty
-            ? null
-            : _description.text.trim(),
-        'pages': int.tryParse(_pages.text.trim()),
-        'publisher': _publisher.text.trim().isEmpty
-            ? null
-            : _publisher.text.trim(),
-        'supplier': _supplier.text.trim().isEmpty
-            ? null
-            : _supplier.text.trim(),
-        'height': double.tryParse(_height.text.trim()),
-        'width': double.tryParse(_width.text.trim()),
-        'length': double.tryParse(_length.text.trim()),
-        'weight': double.tryParse(_weight.text.trim()),
-      };
-      detailBody.removeWhere((_, v) => v == null);
-
-      if (_bookDetailId == null &&
-          (widget.existingId == null || detailBody.isNotEmpty)) {
-        final createdDetail = await books.createBookDetail(detailBody);
-        _bookDetailId = createdDetail['id'] as int?;
-      } else if (_bookDetailId != null && detailBody.isNotEmpty) {
-        await books.updateBookDetail(_bookDetailId!, detailBody);
-      }
-
-      final body = <String, dynamic>{
-        'title': _title.text.trim(),
-        'author': _author.text.trim().isEmpty ? null : _author.text.trim(),
-        'code': _code.text.trim().isEmpty ? null : _code.text.trim(),
-        'edition': int.tryParse(_edition.text.trim()),
-        'publication_date': _pubDate.text.trim().isEmpty
-            ? null
-            : _pubDate.text.trim(),
-        'selling_price': double.tryParse(_price.text.trim()) ?? 0,
-        'stock_quantity': int.tryParse(_stock.text.trim()) ?? 0,
-        'book_detail_id': _bookDetailId,
-      };
-      body.removeWhere((_, v) => v == null);
-      Map<String, dynamic> out;
-      if (widget.existingId == null) {
-        out = await books.createBook(body);
-      } else {
-        out = await books.updateBook(widget.existingId!, body);
-      }
-      int? detailId = out['book_detail_id'] as int?;
-      final bd = out['book_detail'];
-      if (detailId == null && bd is Map<String, dynamic>) {
-        detailId = bd['id'] as int?;
-      }
-      if (mounted && detailId != null) {
-        final picker = ImagePicker();
-        final img = await picker.pickImage(source: ImageSource.gallery);
-        if (img != null) {
-          await books.uploadBookDetailImage(detailId, img.path);
-        }
-      }
+      await _upsertBookAndDetail();
       if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<int?> _upsertBookAndDetail() async {
+    final books = ref.read(bookAdminServiceProvider);
+    final detailBody = <String, dynamic>{
+      'description': _description.text.trim().isEmpty
+          ? null
+          : _description.text.trim(),
+      'pages': int.tryParse(_pages.text.trim()),
+      'publisher': _publisher.text.trim().isEmpty ? null : _publisher.text.trim(),
+      'supplier': _supplier.text.trim().isEmpty ? null : _supplier.text.trim(),
+      'height': double.tryParse(_height.text.trim()),
+      'width': double.tryParse(_width.text.trim()),
+      'length': double.tryParse(_length.text.trim()),
+      'weight': double.tryParse(_weight.text.trim()),
+    };
+    detailBody.removeWhere((_, v) => v == null);
+
+    if (_bookDetailId == null &&
+        (widget.existingId == null || detailBody.isNotEmpty)) {
+      final createdDetail = await books.createBookDetail(detailBody);
+      _bookDetailId = createdDetail['id'] as int?;
+    } else if (_bookDetailId != null && detailBody.isNotEmpty) {
+      await books.updateBookDetail(_bookDetailId!, detailBody);
+    }
+
+    final body = <String, dynamic>{
+      'title': _title.text.trim(),
+      'author': _author.text.trim().isEmpty ? null : _author.text.trim(),
+      'code': _code.text.trim().isEmpty ? null : _code.text.trim(),
+      'edition': int.tryParse(_edition.text.trim()),
+      'publication_date': _pubDate.text.trim().isEmpty
+          ? null
+          : _normalizePublicationDate(_pubDate.text),
+      'selling_price': double.tryParse(_price.text.trim()) ?? 0,
+      'stock_quantity': int.tryParse(_stock.text.trim()) ?? 0,
+      'book_detail_id': _bookDetailId,
+    };
+    body.removeWhere((_, v) => v == null);
+    final out = widget.existingId == null
+        ? await books.createBook(body)
+        : await books.updateBook(widget.existingId!, body);
+
+    int? detailId = out['book_detail_id'] as int?;
+    final bd = out['book_detail'];
+    if (detailId == null && bd is Map<String, dynamic>) {
+      detailId = bd['id'] as int?;
+    }
+    return detailId ?? _bookDetailId;
+  }
+
+  Future<void> _uploadCoverImage() async {
+    if (!_validateInputs()) return;
+    setState(() => _loading = true);
+    try {
+      // New books do not have IDs yet, so we save first.
+      final detailId = await _upsertBookAndDetail();
+      if (detailId == null) {
+        _showError('Không tìm thấy thông tin chi tiết sách để upload ảnh');
+        return;
+      }
+      final picker = ImagePicker();
+      final img = await picker.pickImage(source: ImageSource.gallery);
+      if (img == null) return;
+
+      await ref.read(bookAdminServiceProvider).uploadBookDetailImage(
+            detailId,
+            img.path,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Upload ảnh bìa thành công')),
+        );
+        Navigator.of(context).pop(true);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -285,8 +346,14 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                       ),
                       TextField(
                         controller: _pubDate,
-                        decoration: const InputDecoration(
-                          labelText: 'Ngày xuất bản (YYYY-MM-DD)',
+                        readOnly: true,
+                        onTap: _pickPublicationDate,
+                        decoration: InputDecoration(
+                          labelText: 'Ngày xuất bản (dd-MM-yyyy)',
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.calendar_today_outlined),
+                            onPressed: _pickPublicationDate,
+                          ),
                         ),
                       ),
                       Row(
@@ -407,29 +474,40 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                 const SizedBox(height: 12),
                 _SectionCard(
                   title: 'Ảnh bìa',
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          width: 72,
-                          height: 96,
-                          color: const Color(0xFFF1F5F9),
-                          child: (_imageUrl != null && _imageUrl!.isNotEmpty)
-                              ? Image.network(
-                                  _imageUrl!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) =>
-                                      const Icon(Icons.image_outlined),
-                                )
-                              : const Icon(Icons.image_outlined),
-                        ),
+                      Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              width: 72,
+                              height: 96,
+                              color: const Color(0xFFF1F5F9),
+                              child: (_imageUrl != null && _imageUrl!.isNotEmpty)
+                                  ? Image.network(
+                                      _imageUrl!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) =>
+                                          const Icon(Icons.image_outlined),
+                                    )
+                                  : const Icon(Icons.image_outlined),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Nhấn Upload ảnh để chọn ảnh bìa. Nếu là sách mới, hệ thống sẽ tự lưu rồi upload.',
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: const Text(
-                          'Sau khi lưu, bạn có thể chọn ảnh từ thư viện để upload.',
-                        ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _loading ? null : _uploadCoverImage,
+                        icon: const Icon(Icons.upload_file_outlined),
+                        label: const Text('Upload ảnh bìa'),
                       ),
                     ],
                   ),

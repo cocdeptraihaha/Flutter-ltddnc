@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../app_theme.dart';
 import '../../../core/api_client.dart';
@@ -80,7 +81,8 @@ class _PromotionsTab extends ConsumerStatefulWidget {
 
 class _PromotionsTabState extends ConsumerState<_PromotionsTab> {
   Future<List<Map<String, dynamic>>>? _future;
-  final _dateRe = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+  final _displayDate = DateFormat('dd-MM-yyyy');
+  final _backendDate = DateFormat('yyyy-MM-dd');
 
   Future<void> _reload() async {
     _future = ref
@@ -90,11 +92,49 @@ class _PromotionsTabState extends ConsumerState<_PromotionsTab> {
     await _future;
   }
 
-  String? _normalizeDateTime(String input) {
+  DateTime? _parseFlexibleDate(String input) {
     final t = input.trim();
-    if (t.isEmpty) return null;
-    if (t.contains('T')) return t;
-    return '${t}T00:00:00';
+    if (t.isEmpty) {
+      return null;
+    }
+    try {
+      return _displayDate.parseStrict(t);
+    } catch (_) {}
+    try {
+      return _backendDate.parseStrict(t);
+    } catch (_) {}
+    return DateTime.tryParse(t);
+  }
+
+  String _displayDateValue(dynamic value) {
+    final raw = value?.toString() ?? '';
+    if (raw.trim().isEmpty) return '';
+    final parsed = _parseFlexibleDate(raw.split('T').first);
+    if (parsed == null) return raw.split('T').first;
+    return _displayDate.format(parsed);
+  }
+
+  String? _normalizeDateTime(String input) {
+    final parsed = _parseFlexibleDate(input);
+    if (parsed == null) return null;
+    return '${_backendDate.format(parsed)}T00:00:00';
+  }
+
+  Future<void> _pickDate(TextEditingController controller) async {
+    final now = DateTime.now();
+    final initial = _parseFlexibleDate(controller.text) ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: 'Chọn ngày',
+      cancelText: 'Hủy',
+      confirmText: 'Chọn',
+    );
+    if (picked != null) {
+      controller.text = _displayDate.format(picked);
+    }
   }
 
   void _showError(String message) {
@@ -122,21 +162,15 @@ class _PromotionsTabState extends ConsumerState<_PromotionsTab> {
     DateTime? s;
     DateTime? e;
     if (start.trim().isNotEmpty) {
-      if (!_dateRe.hasMatch(start.trim())) {
-        return 'Ngày bắt đầu sai định dạng YYYY-MM-DD';
-      }
-      s = DateTime.tryParse(start.trim());
+      s = _parseFlexibleDate(start.trim());
       if (s == null) {
-        return 'Ngày bắt đầu không hợp lệ';
+        return 'Ngày bắt đầu không hợp lệ (định dạng dd-MM-yyyy)';
       }
     }
     if (end.trim().isNotEmpty) {
-      if (!_dateRe.hasMatch(end.trim())) {
-        return 'Ngày kết thúc sai định dạng YYYY-MM-DD';
-      }
-      e = DateTime.tryParse(end.trim());
+      e = _parseFlexibleDate(end.trim());
       if (e == null) {
-        return 'Ngày kết thúc không hợp lệ';
+        return 'Ngày kết thúc không hợp lệ (định dạng dd-MM-yyyy)';
       }
     }
     if (s != null && e != null && s.isAfter(e)) {
@@ -159,10 +193,10 @@ class _PromotionsTabState extends ConsumerState<_PromotionsTab> {
       text: existing?['max_discount']?.toString() ?? '',
     );
     final start = TextEditingController(
-      text: existing?['start_date']?.toString().split('T').first ?? '',
+      text: _displayDateValue(existing?['start_date']),
     );
     final end = TextEditingController(
-      text: existing?['end_date']?.toString().split('T').first ?? '',
+      text: _displayDateValue(existing?['end_date']),
     );
     final isEdit = existing != null;
     final ok = await showModalBottomSheet<bool>(
@@ -233,8 +267,14 @@ class _PromotionsTabState extends ConsumerState<_PromotionsTab> {
                   Expanded(
                     child: TextField(
                       controller: start,
-                      decoration: const InputDecoration(
-                        labelText: 'Bắt đầu (YYYY-MM-DD)',
+                      readOnly: true,
+                      onTap: () => _pickDate(start),
+                      decoration: InputDecoration(
+                        labelText: 'Bắt đầu (dd-MM-yyyy)',
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.calendar_today_outlined),
+                          onPressed: () => _pickDate(start),
+                        ),
                       ),
                     ),
                   ),
@@ -242,8 +282,14 @@ class _PromotionsTabState extends ConsumerState<_PromotionsTab> {
                   Expanded(
                     child: TextField(
                       controller: end,
-                      decoration: const InputDecoration(
-                        labelText: 'Kết thúc (YYYY-MM-DD)',
+                      readOnly: true,
+                      onTap: () => _pickDate(end),
+                      decoration: InputDecoration(
+                        labelText: 'Kết thúc (dd-MM-yyyy)',
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.calendar_today_outlined),
+                          onPressed: () => _pickDate(end),
+                        ),
                       ),
                     ),
                   ),
@@ -505,6 +551,7 @@ class _PromotionsTabState extends ConsumerState<_PromotionsTab> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'admin_promotions_fab',
         onPressed: () async {
           final action = await showModalBottomSheet<String>(
             context: context,
@@ -637,6 +684,12 @@ class _PointRewardsTab extends ConsumerStatefulWidget {
 class _PointRewardsTabState extends ConsumerState<_PointRewardsTab> {
   Future<List<Map<String, dynamic>>>? _future;
 
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _reload() async {
     _future = ref.read(pointRewardAdminServiceProvider).list(limit: 100);
     setState(() {});
@@ -649,83 +702,220 @@ class _PointRewardsTabState extends ConsumerState<_PointRewardsTab> {
     _reload();
   }
 
+  Future<void> _openRewardForm({Map<String, dynamic>? existing}) async {
+    final name = TextEditingController(text: existing?['name']?.toString() ?? '');
+    final cost = TextEditingController(text: existing?['cost_points']?.toString() ?? '');
+    final percent = TextEditingController(text: existing?['discount_percent']?.toString() ?? '');
+    final maxDiscount = TextEditingController(text: existing?['max_discount']?.toString() ?? '');
+    final validDays = TextEditingController(text: existing?['valid_days']?.toString() ?? '30');
+    bool active = (existing?['active'] as bool?) ?? true;
+    final isEdit = existing != null;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: Text(isEdit ? 'Sửa phần thưởng điểm' : 'Tạo phần thưởng điểm'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(labelText: 'Tên phần thưởng'),
+                ),
+                TextField(
+                  controller: cost,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Điểm cần đổi'),
+                ),
+                TextField(
+                  controller: percent,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Discount %'),
+                ),
+                TextField(
+                  controller: maxDiscount,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Giảm tối đa (tuỳ chọn)'),
+                ),
+                TextField(
+                  controller: validDays,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Số ngày hiệu lực'),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: active,
+                  onChanged: (v) => setModalState(() => active = v),
+                  title: const Text('Kích hoạt'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Huỷ'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(isEdit ? 'Lưu' : 'Tạo'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+
+    final n = name.text.trim();
+    final c = int.tryParse(cost.text.trim());
+    final p = double.tryParse(percent.text.trim());
+    final md = maxDiscount.text.trim().isEmpty
+        ? null
+        : double.tryParse(maxDiscount.text.trim());
+    final vd = int.tryParse(validDays.text.trim());
+
+    if (n.isEmpty) {
+      _showError('Tên phần thưởng không được để trống');
+      return;
+    }
+    if (c == null || c <= 0) {
+      _showError('Điểm cần đổi phải là số nguyên > 0');
+      return;
+    }
+    if (p == null || p <= 0 || p > 100) {
+      _showError('Discount % phải > 0 và <= 100');
+      return;
+    }
+    if (md != null && md < 0) {
+      _showError('Giảm tối đa phải >= 0');
+      return;
+    }
+    if (vd == null || vd <= 0) {
+      _showError('Số ngày hiệu lực phải là số nguyên > 0');
+      return;
+    }
+
+    final body = <String, dynamic>{
+      'name': n,
+      'cost_points': c,
+      'discount_percent': p,
+      'max_discount': md,
+      'valid_days': vd,
+      'active': active,
+    }..removeWhere((_, v) => v == null);
+
+    try {
+      final svc = ref.read(pointRewardAdminServiceProvider);
+      if (isEdit) {
+        await svc.update(existing['id'] as int, body);
+      } else {
+        await svc.create(body);
+      }
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(dioErrorMessage(e))));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: _reload,
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(child: Text(dioErrorMessage(snap.error!)));
-          }
-          final rows = snap.data ?? const [];
-          if (rows.isEmpty) {
-            return const EmptyState(
-              message: 'Chưa có phần thưởng điểm',
-              icon: Icons.stars_outlined,
-            );
-          }
-          return ListView.separated(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            itemCount: rows.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (_, i) {
-              final r = rows[i];
-              return Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.outline),
-                ),
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.stars_rounded,
-                        color: Color(0xFFB45309),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            r['name']?.toString() ?? '—',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.onSurface,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${r['cost_points']} điểm · ${r['discount_percent']}%',
-                            style: const TextStyle(
-                              color: AppColors.onSurfaceVariant,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: RefreshIndicator(
+        onRefresh: _reload,
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snap.hasError) {
+              return Center(child: Text(dioErrorMessage(snap.error!)));
+            }
+            final rows = snap.data ?? const [];
+            if (rows.isEmpty) {
+              return const EmptyState(
+                message: 'Chưa có phần thưởng điểm',
+                icon: Icons.stars_outlined,
               );
-            },
-          );
-        },
+            }
+            return ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+              itemCount: rows.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (_, i) {
+                final r = rows[i];
+                final active = (r['active'] as bool?) ?? false;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AppColors.outline),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.stars_rounded,
+                          color: Color(0xFFB45309),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              r['name']?.toString() ?? '—',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${r['cost_points']} điểm · ${r['discount_percent']}% · ${active ? 'Đang bật' : 'Đang tắt'}',
+                              style: const TextStyle(
+                                color: AppColors.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => _openRewardForm(existing: r),
+                        icon: const Icon(Icons.edit_outlined),
+                        tooltip: 'Sửa',
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'admin_point_rewards_fab',
+        onPressed: () => _openRewardForm(),
+        icon: const Icon(Icons.add),
+        label: const Text('Thêm phần thưởng'),
       ),
     );
   }

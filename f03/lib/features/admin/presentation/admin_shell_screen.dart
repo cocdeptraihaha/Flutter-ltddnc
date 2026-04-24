@@ -5,6 +5,7 @@ import 'account_screen.dart';
 import 'books_list_screen.dart';
 import 'dashboard_screen.dart';
 import 'orders_list_screen.dart';
+import 'notifications_screen.dart';
 import 'promotions_screen.dart';
 import 'returns_screen.dart';
 import 'revenue_screen.dart';
@@ -32,6 +33,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     _NavItem('Doanh thu', Icons.trending_up_outlined, Icons.trending_up_rounded),
     _NavItem('Trả hàng', Icons.assignment_return_outlined,
         Icons.assignment_return_rounded),
+    _NavItem('Thông báo', Icons.notifications_outlined, Icons.notifications_rounded),
     _NavItem('Tài khoản', Icons.manage_accounts_outlined,
         Icons.manage_accounts_rounded),
   ];
@@ -47,6 +49,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
         PromotionsScreen(),
         RevenueScreen(),
         ReturnsScreen(),
+        NotificationsScreen(),
         AccountScreen(),
       ];
 

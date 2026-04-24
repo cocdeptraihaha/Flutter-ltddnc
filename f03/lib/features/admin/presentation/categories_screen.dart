@@ -35,6 +35,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'admin_categories_fab',
         onPressed: () async {
           final nameCtl = TextEditingController();
           final ok = await showDialog<bool>(

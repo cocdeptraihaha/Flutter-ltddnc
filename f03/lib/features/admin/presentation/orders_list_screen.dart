@@ -21,6 +21,17 @@ const _statuses = [
   'CANCEL_REQUESTED',
   'RETURNED',
 ];
+const _statusLabels = {
+  'PENDING': 'Đơn mới',
+  'CONFIRMED': 'Đã xác nhận',
+  'INPROGRESS': 'Chuẩn bị hàng',
+  'SHIPPED': 'Đang giao',
+  'DELIVERED': 'Đã giao',
+  'COMPLETED': 'Hoàn thành',
+  'CANCELLED': 'Đã hủy',
+  'CANCEL_REQUESTED': 'Yêu cầu hủy',
+  'RETURNED': 'Đã trả',
+};
 
 class OrdersListScreen extends ConsumerStatefulWidget {
   const OrdersListScreen({super.key});
@@ -34,7 +45,28 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
   final _q = TextEditingController();
   int _skip = 0;
   int _version = 0;
+  Future<List<Map<String, dynamic>>>? _future;
+  String _rangeKey = '';
   static const _limit = 30;
+
+  Future<List<Map<String, dynamic>>> _queryOrders() {
+    final range = ref.read(adminDateRangeProvider);
+    final q = _q.text.trim();
+    return ref.read(orderAdminServiceProvider).listOrders(
+          skip: _skip,
+          limit: _limit,
+          statusIn: _selected.isEmpty ? null : _selected.toList(),
+          from: range.start,
+          to: range.end,
+          q: q.isEmpty ? null : q,
+        );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _queryOrders();
+  }
 
   @override
   void dispose() {
@@ -43,7 +75,10 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
   }
 
   Future<void> _reload() async {
-    setState(() => _version++);
+    setState(() {
+      _version++;
+      _future = _queryOrders();
+    });
   }
 
   Future<void> _exportCsv() async {
@@ -68,7 +103,21 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
   @override
   Widget build(BuildContext context) {
     final range = ref.watch(adminDateRangeProvider);
-    final svc = ref.watch(orderAdminServiceProvider);
+    final nextRangeKey =
+        '${range.start.toIso8601String()}_${range.end.toIso8601String()}';
+    if (_rangeKey != nextRangeKey) {
+      _rangeKey = nextRangeKey;
+      if (_future != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _skip = 0;
+            _version++;
+            _future = _queryOrders();
+          });
+        });
+      }
+    }
     final fmt = NumberFormat.currency(locale: 'vi_VN', symbol: '₫');
     final q = _q.text.trim();
 
@@ -98,6 +147,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                                   setState(() {
                                     _skip = 0;
                                     _version++;
+                                    _future = _queryOrders();
                                   });
                                 },
                               ),
@@ -105,6 +155,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                       onSubmitted: (_) => setState(() {
                         _skip = 0;
                         _version++;
+                        _future = _queryOrders();
                       }),
                     ),
                   ),
@@ -126,6 +177,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                             _selected.clear();
                             _skip = 0;
                             _version++;
+                            _future = _queryOrders();
                           });
                       }
                     },
@@ -163,7 +215,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
               children: [
                 for (final s in _statuses)
                   FilterChip(
-                    label: Text(s),
+                    label: Text(_statusLabels[s] ?? s),
                     selected: _selected.contains(s),
                     avatar: CircleAvatar(
                       radius: 5,
@@ -178,6 +230,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                         }
                         _skip = 0;
                         _version++;
+                        _future = _queryOrders();
                       });
                     },
                   ),
@@ -188,16 +241,8 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
               child: RefreshIndicator(
                 onRefresh: _reload,
                 child: FutureBuilder<List<Map<String, dynamic>>>(
-                  key: ValueKey(
-                      'orders-$_skip-$_version-${_selected.join(",")}-$q'),
-                  future: svc.listOrders(
-                    skip: _skip,
-                    limit: _limit,
-                    statusIn: _selected.isEmpty ? null : _selected.toList(),
-                    from: range.start,
-                    to: range.end,
-                    q: q.isEmpty ? null : q,
-                  ),
+                  key: ValueKey('orders-$_skip-$_version-${_selected.join(",")}-$q'),
+                  future: _future,
                   builder: (context, snap) {
                     if (snap.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
@@ -229,10 +274,12 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                             onPrev: () => setState(() {
                               _skip -= _limit;
                               _version++;
+                              _future = _queryOrders();
                             }),
                             onNext: () => setState(() {
                               _skip += _limit;
                               _version++;
+                              _future = _queryOrders();
                             }),
                           );
                         }
@@ -278,6 +325,7 @@ class _OrderTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final id = order['id'];
     final status = order['status']?.toString() ?? '—';
+    final statusLabel = _statusLabels[status] ?? status;
     final total = (order['total_price'] as num?)?.toDouble() ?? 0;
     final name = order['full_name']?.toString() ?? '—';
     final phone = order['phone_number']?.toString();
@@ -308,7 +356,7 @@ class _OrderTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                  StatusPill(label: status),
+                  StatusPill(label: statusLabel, color: StatusPill.colorOf(status)),
                 ],
               ),
               const SizedBox(height: 6),

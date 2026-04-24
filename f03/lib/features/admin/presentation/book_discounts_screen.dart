@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/api_client.dart';
 import '../providers/admin_providers.dart';
@@ -14,18 +15,57 @@ class BookDiscountsScreen extends ConsumerStatefulWidget {
 
 class _BookDiscountsScreenState extends ConsumerState<BookDiscountsScreen> {
   Future<List<Map<String, dynamic>>>? _future;
-  final _dateRe = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+  final _displayDate = DateFormat('dd-MM-yyyy');
+  final _backendDate = DateFormat('yyyy-MM-dd');
 
   void _reload() {
     _future = ref.read(bookDiscountAdminServiceProvider).list(limit: 100);
     setState(() {});
   }
 
-  String? _normalizeDateTime(String input) {
+  DateTime? _parseFlexibleDate(String input) {
     final t = input.trim();
-    if (t.isEmpty) return null;
-    if (t.contains('T')) return t;
-    return '${t}T00:00:00';
+    if (t.isEmpty) {
+      return null;
+    }
+    try {
+      return _displayDate.parseStrict(t);
+    } catch (_) {}
+    try {
+      return _backendDate.parseStrict(t);
+    } catch (_) {}
+    return DateTime.tryParse(t);
+  }
+
+  String _displayDateValue(dynamic value) {
+    final raw = value?.toString() ?? '';
+    if (raw.trim().isEmpty) return '';
+    final parsed = _parseFlexibleDate(raw.split('T').first);
+    if (parsed == null) return raw.split('T').first;
+    return _displayDate.format(parsed);
+  }
+
+  String? _normalizeDateTime(String input) {
+    final parsed = _parseFlexibleDate(input);
+    if (parsed == null) return null;
+    return '${_backendDate.format(parsed)}T00:00:00';
+  }
+
+  Future<void> _pickDate(TextEditingController controller) async {
+    final now = DateTime.now();
+    final initial = _parseFlexibleDate(controller.text) ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: 'Chọn ngày',
+      cancelText: 'Hủy',
+      confirmText: 'Chọn',
+    );
+    if (picked != null) {
+      controller.text = _displayDate.format(picked);
+    }
   }
 
   void _showError(String message) {
@@ -62,21 +102,15 @@ class _BookDiscountsScreenState extends ConsumerState<BookDiscountsScreen> {
     DateTime? sDate;
     DateTime? eDate;
     if (start.trim().isNotEmpty) {
-      if (!_dateRe.hasMatch(start.trim())) {
-        return 'start_date sai định dạng YYYY-MM-DD';
-      }
-      sDate = DateTime.tryParse(start.trim());
+      sDate = _parseFlexibleDate(start.trim());
       if (sDate == null) {
-        return 'start_date không hợp lệ';
+        return 'start_date không hợp lệ (định dạng dd-MM-yyyy)';
       }
     }
     if (end.trim().isNotEmpty) {
-      if (!_dateRe.hasMatch(end.trim())) {
-        return 'end_date sai định dạng YYYY-MM-DD';
-      }
-      eDate = DateTime.tryParse(end.trim());
+      eDate = _parseFlexibleDate(end.trim());
       if (eDate == null) {
-        return 'end_date không hợp lệ';
+        return 'end_date không hợp lệ (định dạng dd-MM-yyyy)';
       }
     }
     if (sDate != null && eDate != null && sDate.isAfter(eDate)) {
@@ -96,10 +130,10 @@ class _BookDiscountsScreenState extends ConsumerState<BookDiscountsScreen> {
       text: ((existing?['book_ids'] as List?) ?? const []).join(','),
     );
     final start = TextEditingController(
-      text: existing?['start_date']?.toString().split('T').first ?? '',
+      text: _displayDateValue(existing?['start_date']),
     );
     final end = TextEditingController(
-      text: existing?['end_date']?.toString().split('T').first ?? '',
+      text: _displayDateValue(existing?['end_date']),
     );
     final isEdit = existing != null;
     final ok = await showDialog<bool>(
@@ -128,14 +162,26 @@ class _BookDiscountsScreenState extends ConsumerState<BookDiscountsScreen> {
               ),
               TextField(
                 controller: start,
-                decoration: const InputDecoration(
-                  labelText: 'start_date YYYY-MM-DD',
+                readOnly: true,
+                onTap: () => _pickDate(start),
+                decoration: InputDecoration(
+                  labelText: 'start_date dd-MM-yyyy',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.calendar_today_outlined),
+                    onPressed: () => _pickDate(start),
+                  ),
                 ),
               ),
               TextField(
                 controller: end,
-                decoration: const InputDecoration(
-                  labelText: 'end_date YYYY-MM-DD',
+                readOnly: true,
+                onTap: () => _pickDate(end),
+                decoration: InputDecoration(
+                  labelText: 'end_date dd-MM-yyyy',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.calendar_today_outlined),
+                    onPressed: () => _pickDate(end),
+                  ),
                 ),
               ),
             ],
@@ -245,6 +291,7 @@ class _BookDiscountsScreenState extends ConsumerState<BookDiscountsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'admin_book_discounts_fab',
         onPressed: () => _openDiscountForm(),
         child: const Icon(Icons.add),
       ),

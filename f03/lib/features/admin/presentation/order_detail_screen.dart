@@ -18,6 +18,31 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   bool _loading = true;
   bool _submitting = false;
 
+  String _statusLabel(String status) {
+    switch (status.toUpperCase()) {
+      case 'PENDING':
+        return 'Đơn mới';
+      case 'CONFIRMED':
+        return 'Đã xác nhận';
+      case 'INPROGRESS':
+        return 'Đang chuẩn bị';
+      case 'SHIPPED':
+        return 'Đang giao';
+      case 'DELIVERED':
+        return 'Đã giao';
+      case 'COMPLETED':
+        return 'Hoàn thành';
+      case 'CANCEL_REQUESTED':
+        return 'Khách yêu cầu hủy';
+      case 'CANCELLED':
+        return 'Đã hủy';
+      case 'RETURNED':
+        return 'Đã trả hàng';
+      default:
+        return status;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -42,12 +67,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     }
   }
 
-  Future<void> _setStatus(String s) async {
+  Future<void> _setStatus(String s, {String? successMessage}) async {
     if (_submitting) return;
     setState(() => _submitting = true);
     try {
       await ref.read(orderAdminServiceProvider).updateStatus(widget.orderId, s);
       await _load();
+      if (mounted && successMessage != null && successMessage.isNotEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMessage)));
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -109,6 +139,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                   : prov.text.trim(),
             );
         await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cập nhật vận chuyển thành công')),
+          );
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(
@@ -147,6 +182,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             .read(orderAdminServiceProvider)
             .cancelDecision(widget.orderId, ok == 'approve');
         await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                ok == 'approve'
+                    ? 'Đã duyệt yêu cầu hủy thành công'
+                    : 'Đã từ chối yêu cầu hủy',
+              ),
+            ),
+          );
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(
@@ -200,14 +246,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       ),
     );
     if (ok == true) {
-      await _setStatus('CANCELLED');
+      await _setStatus(
+        'CANCELLED',
+        successMessage: 'Hủy đơn thành công',
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final status = _order?['status']?.toString() ?? '';
+    final statusText = _statusLabel(status);
     final nextStatus = _nextStatusFor(status);
+    final nextStatusText = nextStatus == null ? null : _statusLabel(nextStatus);
     final canCancel = _canCancelOrder(status);
     final hasCancelRequest = status.contains('CANCEL_REQUESTED');
 
@@ -226,8 +277,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.receipt_long_outlined),
-                    title: Text('Trạng thái: $status'),
-                    subtitle: Text('Tổng: ${_order!['total_price']} ₫'),
+                    title: Text('Trạng thái: $statusText'),
+                    subtitle: Text('Mã trạng thái: $status'),
+                    trailing: Text('Tổng: ${_order!['total_price']} ₫'),
                   ),
                 ),
                 Card(
@@ -266,12 +318,16 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     FilledButton.icon(
                       onPressed: nextStatus == null || _submitting
                           ? null
-                          : () => _setStatus(nextStatus),
+                          : () => _setStatus(
+                                nextStatus,
+                                successMessage:
+                                    'Đã chuyển trạng thái: $nextStatusText',
+                              ),
                       icon: const Icon(Icons.trending_up_rounded),
                       label: Text(
                         nextStatus == null
                             ? 'Đơn đã ở trạng thái cuối'
-                            : 'Xúc tiến: $nextStatus',
+                            : 'Xúc tiến: $nextStatusText',
                       ),
                     ),
                     OutlinedButton.icon(

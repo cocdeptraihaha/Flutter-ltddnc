@@ -301,6 +301,7 @@ class _BooksListScreenState extends ConsumerState<BooksListScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'admin_books_list_fab',
         onPressed: () => _openForm(),
         icon: const Icon(Icons.add_rounded),
         label: const Text('Thêm sách'),
