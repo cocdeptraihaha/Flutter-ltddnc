@@ -33,7 +33,10 @@ class BookAdminService {
     return parseBookPage(res.data!);
   }
 
-  Future<List<BookListItem>> lowStock({int threshold = 5, int limit = 50}) async {
+  Future<List<BookListItem>> lowStock({
+    int threshold = 5,
+    int limit = 50,
+  }) async {
     final res = await _dio.get<List<dynamic>>(
       '/books/admin/low-stock',
       queryParameters: {'threshold': threshold, 'limit': limit},
@@ -48,8 +51,35 @@ class BookAdminService {
     return res.data!;
   }
 
-  Future<Map<String, dynamic>> updateBook(int id, Map<String, dynamic> body) async {
-    final res = await _dio.patch<Map<String, dynamic>>('/books/$id', data: body);
+  Future<Map<String, dynamic>> updateBook(
+    int id,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.patch<Map<String, dynamic>>(
+      '/books/$id',
+      data: body,
+    );
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> createBookDetail(
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/book-details/',
+      data: body,
+    );
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> updateBookDetail(
+    int id,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.patch<Map<String, dynamic>>(
+      '/book-details/$id',
+      data: body,
+    );
     return res.data!;
   }
 
@@ -58,12 +88,14 @@ class BookAdminService {
   }
 
   Future<Map<String, dynamic>> restoreBook(int id) async {
-    final res =
-        await _dio.post<Map<String, dynamic>>('/books/$id/restore');
+    final res = await _dio.post<Map<String, dynamic>>('/books/$id/restore');
     return res.data!;
   }
 
-  Future<Map<String, dynamic>> putCategories(int bookId, List<int> categoryIds) async {
+  Future<Map<String, dynamic>> putCategories(
+    int bookId,
+    List<int> categoryIds,
+  ) async {
     final res = await _dio.put<Map<String, dynamic>>(
       '/books/$bookId/categories',
       data: {'category_ids': categoryIds},
@@ -75,9 +107,6 @@ class BookAdminService {
     final form = FormData.fromMap({
       'file': await MultipartFile.fromFile(filePath),
     });
-    await _dio.post<void>(
-      '/upload/book-detail/$detailId/image',
-      data: form,
-    );
+    await _dio.post<void>('/upload/book-detail/$detailId/image', data: form);
   }
 }
